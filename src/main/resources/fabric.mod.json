@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "autorynek",
+  "version": "1.0.0",
+  "name": "AutoRynek",
+  "description": "Autorynek dla anarchia.gg - bez licencji, bez wysylania danych.",
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": { "client": [ "pl.autorynek.AutoRynek" ] },
+  "depends": { "fabricloader": ">=0.16.9", "minecraft": "~1.21.4", "java": ">=21", "fabric-api": "*" }
+}
