@@ -21,7 +21,7 @@ public class Buyer {
 
     public boolean running = false;
     public int bought = 0;
-    private long nextAt = 0, lastOpen = 0, confirmDeadline = 0, seenAt = 0;
+    private long nextAt = 0, lastOpen = 0, confirmDeadline = 0, seenAt = 0, openedAt = 0;
     private boolean awaitingConfirm = false, sortGaveUp = false;
     private int marketSyncId = -1, seenSync = -1, sortCheckedSync = -1, sortClicks = 0;
 
@@ -42,6 +42,11 @@ public class Buyer {
     public void tick(MinecraftClient c, Config cfg) {
         if (!running) return;
         if (c.player == null || c.world == null || c.interactionManager == null) { running = false; return; }
+        if (cfg.rules.isEmpty()) {
+            running = false;
+            msg("§cBrak regul. Dodaj regule w AutoRynek -> Przydatne.");
+            return;
+        }
         long now = System.currentTimeMillis();
         if (now < nextAt) return;
 
@@ -66,7 +71,7 @@ public class Buyer {
 
             // nowe okno: poczekaj az serwer wysle zawartosc
             if (h.syncId != seenSync) {
-                seenSync = h.syncId; seenAt = now;
+                seenSync = h.syncId; seenAt = now; openedAt = now;
                 nextAt = now + Math.max(100, cfg.settleMs);
                 return;
             }
@@ -81,7 +86,7 @@ public class Buyer {
                     sortGaveUp = true;
                     msg("§cNie moge odczytac sortowania (slot " + cfg.sortSlot + "). Uzyj przycisku SLOTY i wyslij zrzut.");
                 } else if (st) {
-                    sortCheckedSync = h.syncId; sortClicks = 0;
+                    sortCheckedSync = h.syncId; sortClicks = 0; openedAt = now;
                 } else if (sortClicks >= 8) {
                     sortGaveUp = true;
                     msg("§cNie udalo sie ustawic sortowania: " + cfg.wantedSort);
@@ -109,11 +114,14 @@ public class Buyer {
             // nic nie pasuje -> odswiez
             if (cfg.refreshSlot >= 0 && cfg.refreshSlot < h.slots.size()) {
                 c.interactionManager.clickSlot(h.syncId, cfg.refreshSlot, 0, SlotActionType.PICKUP, c.player);
+                nextAt = now + cfg.refreshDelayMs;
+            } else if (now - openedAt < Math.max(1000, cfg.refreshDelayMs)) {
+                nextAt = now + 100;   // okno zostaje otwarte, skanujemy dalej
             } else {
                 c.player.closeHandledScreen();
                 lastOpen = 0;
+                nextAt = now + 300;
             }
-            nextAt = now + cfg.refreshDelayMs;
         } else if (c.currentScreen == null) {
             if (now - lastOpen > 1500) {
                 c.player.networkHandler.sendChatCommand(cfg.command);
@@ -205,17 +213,42 @@ public class Buyer {
         msg("§aSloty wypisane na czacie");
     }
 
+    // ---------- diagnostyka: wypisz oferty z okna rynku ----------
+    public void dumpItems(MinecraftClient c, Config cfg) {
+        if (!(c.currentScreen instanceof GenericContainerScreen gcs)) return;
+        GenericContainerScreenHandler h = gcs.getScreenHandler();
+        var chat = c.inGameHud.getChatHud();
+        int size = Math.min(h.getRows() * 9, h.slots.size());
+        for (int i = 0; i < size; i++) {
+            if (!inArea(i, cfg)) continue;
+            ItemStack st = h.getSlot(i).getStack();
+            if (st.isEmpty()) continue;
+            String id = Registries.ITEM.getId(st.getItem()).getPath();
+            StringBuilder sb = new StringBuilder("§b" + i + "§f: " + id + " §7| §f" + st.getName().getString()
+                + " §8(" + colorKey(st.getName()) + ") §7| §e" + String.join(",", enchants(st)) + " §7| §acena " + price(st));
+            LoreComponent lore = st.get(DataComponentTypes.LORE);
+            if (lore != null) {
+                StringBuilder lr = new StringBuilder();
+                for (Text l : lore.lines()) { String s = strip(l.getString()); if (!s.isBlank()) lr.append(s).append(" / "); }
+                String t = lr.toString();
+                sb.append(" §8").append(t.length() > 160 ? t.substring(0, 160) : t);
+            }
+            chat.addMessage(Text.literal(sb.toString()));
+        }
+        msg("§aOferty wypisane na czacie");
+    }
+
     // ---------- dopasowanie ----------
     private boolean matches(ItemStack st, Config cfg) {
         long price = price(st);
         if (price < 0) return false;
         String id = Registries.ITEM.getId(st.getItem()).toString();
-        String name = st.getName().getString().toLowerCase();
+        String name = strip(st.getName().getString()).toLowerCase();
         Set<String> ench = enchants(st);
         for (Config.Rule r : cfg.rules) {
             if (r.maxPrice <= 0 || price > r.maxPrice) continue;
             if (!r.id.isBlank() && !id.equalsIgnoreCase(r.id.contains(":") ? r.id : "minecraft:" + r.id)) continue;
-            if (!r.name.isBlank() && !name.contains(r.name.toLowerCase())) continue;
+            if (!r.name.isBlank() && !name.contains(strip(r.name.replace('&', '§')).toLowerCase())) continue;
             boolean ok = true;
             for (String e : r.enchants.toLowerCase().split(",")) {
                 e = e.trim();
