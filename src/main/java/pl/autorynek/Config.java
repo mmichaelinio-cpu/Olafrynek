@@ -11,6 +11,7 @@ public class Config {
         public String name = "";      // fragment nazwy (opcjonalnie)
         public String enchants = "";  // np. sharpness:5,unbreaking:3 (opcjonalnie)
         public long maxPrice = 0;
+                public String label = "";   // nazwa do wyswietlania (kolory przez &)
     }
     public String command = "rynek";   // komenda otwierajaca rynek (bez /)
     public String titleContains = "";  // fragment tytulu GUI rynku (puste = kazde)
