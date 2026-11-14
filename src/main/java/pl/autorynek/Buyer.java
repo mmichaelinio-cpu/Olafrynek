@@ -86,7 +86,7 @@ public class Buyer {
                     sortGaveUp = true;
                     msg("§cNie udalo sie ustawic sortowania: " + cfg.wantedSort);
                 } else {
-                    c.interactionManager.clickSlot(h.syncId, cfg.sortSlot, 0, SlotActionType.PICKUP, c.player);
+                    c.interactionManager.clickSlot(h.syncId, cfg.sortSlot, 1, SlotActionType.PICKUP, c.player);
                     sortClicks++; seenAt = now;
                     nextAt = now + cfg.actionDelayMs + 250;
                     return;
