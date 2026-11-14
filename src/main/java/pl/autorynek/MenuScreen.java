@@ -31,35 +31,7 @@ public class MenuScreen extends Screen {
     }
 
     private enum Mode { LIST, FORM, PRESETS, SETTINGS }
-    // {nazwa z kolorem (& = kolor), id przedmiotu, enchanty}
-    private static final String[][] PRESETS = {
-        {"&bElytra", "elytra", ""},
-        {"&eTotem nieśmiertelności", "totem_of_undying", ""},
-        {"&6Zaczarowane jabłko", "enchanted_golden_apple", ""},
-        {"&dSkrzynia shulkera", "shulker_box", ""},
-        {"&aBeacon", "beacon", ""},
-        {"&cJajo smoka", "dragon_egg", ""},
-        {"&9Trójząb", "trident", ""},
-        {"&7Maczuga", "mace", ""},
-        {"&5Netherytowy miecz", "netherite_sword", ""},
-        {"&5Netherytowy hełm", "netherite_helmet", ""},
-        {"&5Netherytowy napierśnik", "netherite_chestplate", ""},
-        {"&5Netherytowe spodnie", "netherite_leggings", ""},
-        {"&5Netherytowe buty", "netherite_boots", ""},
-        {"&5Netherytowy kilof", "netherite_pickaxe", ""},
-        {"&5Netherytowa siekiera", "netherite_axe", ""},
-        {"&dKsiążka: Naprawa", "enchanted_book", "mending:1"},
-        {"&dKsiążka: Ostrość V", "enchanted_book", "sharpness:5"},
-        {"&dKsiążka: Ochrona IV", "enchanted_book", "protection:4"},
-        {"&dKsiążka: Wytrzymałość III", "enchanted_book", "unbreaking:3"},
-        {"&dKsiążka: Wydajność V", "enchanted_book", "efficiency:5"},
-        {"&dKsiążka: Szczęście III", "enchanted_book", "fortune:3"},
-        {"&dKsiążka: Grabież III", "enchanted_book", "looting:3"},
-        {"&dKsiążka: Zamiatanie III", "enchanted_book", "sweeping_edge:3"},
-        {"&dKsiążka: Cierń III", "enchanted_book", "thorns:3"},
-        {"&dKsiążka: Lekkie stąpanie", "enchanted_book", "silk_touch:1"},
-        {"&dKsiążka: Lekkie spadanie IV", "enchanted_book", "feather_falling:4"},
-    };
+    private static final String[][] PRESETS = Presets.LIST;
     private int ppage = 0;
     private String presetPrice = "", toast = "";
     private TextFieldWidget fPreset;
