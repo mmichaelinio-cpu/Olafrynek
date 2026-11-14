@@ -9,26 +9,35 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
 import net.minecraft.screen.GenericContainerScreenHandler;
 import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.text.Style;
 import net.minecraft.text.Text;
 import java.util.*;
 import java.util.regex.*;
 
 public class Buyer {
     private static final Pattern PRICE = Pattern.compile("(\\d[\\d.,\\s]*\\d|\\d)\\s*([kKmM])?(?![a-zA-Z])");
+    private static final String[] SORT_KEYS = {"brak", "najwy", "najni", "najstar", "najnow"};
+    private static final String MARKERS = "»>▶►✔✓➤●▸→";
 
     public boolean running = false;
     public int bought = 0;
-    private long nextAt = 0, lastOpen = 0, confirmDeadline = 0;
-    private boolean awaitingConfirm = false;
-    private int marketSyncId = -1;
+    private long nextAt = 0, lastOpen = 0, confirmDeadline = 0, seenAt = 0;
+    private boolean awaitingConfirm = false, sortGaveUp = false;
+    private int marketSyncId = -1, seenSync = -1, sortCheckedSync = -1, sortClicks = 0;
 
-    public void start() { running = true; awaitingConfirm = false; nextAt = 0; msg("§aAutoRynek: START"); }
-    public void stop()  { if (running) msg("§cAutoRynek: STOP (kupiono: " + bought + ")"); running = false; }
+    public void start() {
+        running = true; awaitingConfirm = false; nextAt = 0;
+        seenSync = -1; sortCheckedSync = -1; sortClicks = 0; sortGaveUp = false;
+        msg("§aAutoRynek: START");
+    }
+    public void stop() { if (running) msg("§cAutoRynek: STOP (kupiono: " + bought + ")"); running = false; }
 
     private void msg(String s) {
         MinecraftClient c = MinecraftClient.getInstance();
         if (c.player != null) c.player.sendMessage(Text.literal(s), true);
     }
+
+    private static boolean inArea(int i, Config cfg) { return i % 9 >= cfg.itemColStart && i / 9 < cfg.itemRows; }
 
     public void tick(MinecraftClient c, Config cfg) {
         if (!running) return;
@@ -53,9 +62,40 @@ public class Buyer {
                 nextAt = now + 200; return;
             }
             marketSyncId = h.syncId;
-            int size = h.getRows() * 9;
-            for (int i = 0; i < size && i < h.slots.size(); i++) {
-                if (i == cfg.refreshSlot || i == cfg.confirmSlot) continue;
+            int size = Math.min(h.getRows() * 9, h.slots.size());
+
+            // nowe okno: poczekaj az serwer wysle zawartosc
+            if (h.syncId != seenSync) {
+                seenSync = h.syncId; seenAt = now;
+                nextAt = now + Math.max(100, cfg.settleMs);
+                return;
+            }
+            boolean any = false;
+            for (int i = 0; i < size && !any; i++) if (inArea(i, cfg) && !h.getSlot(i).getStack().isEmpty()) any = true;
+            if (!any && now - seenAt < 2000) { nextAt = now + 100; return; }
+
+            // sortowanie -> ma byc ustawione na wantedSort
+            if (cfg.sortSlot >= 0 && cfg.sortSlot < size && !sortGaveUp && sortCheckedSync != h.syncId) {
+                Boolean st = sortState(h.getSlot(cfg.sortSlot).getStack(), cfg.wantedSort);
+                if (st == null) {
+                    sortGaveUp = true;
+                    msg("§cNie moge odczytac sortowania (slot " + cfg.sortSlot + "). Uzyj przycisku SLOTY i wyslij zrzut.");
+                } else if (st) {
+                    sortCheckedSync = h.syncId; sortClicks = 0;
+                } else if (sortClicks >= 8) {
+                    sortGaveUp = true;
+                    msg("§cNie udalo sie ustawic sortowania: " + cfg.wantedSort);
+                } else {
+                    c.interactionManager.clickSlot(h.syncId, cfg.sortSlot, 0, SlotActionType.PICKUP, c.player);
+                    sortClicks++; seenAt = now;
+                    nextAt = now + cfg.actionDelayMs + 250;
+                    return;
+                }
+            }
+
+            for (int i = 0; i < size; i++) {
+                if (!inArea(i, cfg)) continue;
+                if (i == cfg.refreshSlot || i == cfg.confirmSlot || i == cfg.sortSlot) continue;
                 ItemStack st = h.getSlot(i).getStack();
                 if (st.isEmpty()) continue;
                 if (matches(st, cfg)) {
@@ -83,6 +123,89 @@ public class Buyer {
         }
     }
 
+    // ---------- sortowanie ----------
+    private static String strip(String s) { return s.replaceAll("§.", ""); }
+
+    private static String colorKey(Text t) {
+        String raw = t.getString();
+        if (raw.length() >= 2 && raw.charAt(0) == '§') return "L" + raw.charAt(1);
+        final String[] out = {null};
+        t.visit((style, s) -> {
+            if (out[0] == null && !s.isBlank())
+                out[0] = style.getColor() == null ? "none" : Integer.toHexString(style.getColor().getRgb());
+            return Optional.empty();
+        }, Style.EMPTY);
+        return out[0] == null ? "none" : out[0];
+    }
+
+    /** true = wybrane, false = niewybrane, null = nie da sie ustalic. */
+    private Boolean sortState(ItemStack st, String wanted) {
+        LoreComponent lore = st.get(DataComponentTypes.LORE);
+        if (lore == null || wanted == null || wanted.isBlank()) return null;
+        String w = wanted.toLowerCase().trim();
+        List<Text> lines = lore.lines();
+        int wi = -1;
+        List<Integer> opts = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) {
+            String s = strip(lines.get(i).getString()).toLowerCase();
+            if (wi < 0 && s.contains(w)) wi = i;
+            for (String k : SORT_KEYS) if (s.contains(k)) { opts.add(i); break; }
+        }
+        if (wi < 0) return null;
+        String ws = strip(lines.get(wi).getString()).toLowerCase();
+        if (ws.contains("aktualn") || ws.contains("wybran")) return true;
+        if (!opts.contains(wi)) opts.add(wi);
+        if (opts.size() < 2) return null;
+
+        // znaczniki ">" przed wybrana opcja
+        boolean wm = MARKERS.indexOf(ws.trim().isEmpty() ? ' ' : ws.trim().charAt(0)) >= 0;
+        int otherMarked = 0;
+        for (int i : opts) {
+            if (i == wi) continue;
+            String s = strip(lines.get(i).getString()).trim();
+            if (!s.isEmpty() && MARKERS.indexOf(s.charAt(0)) >= 0) otherMarked++;
+        }
+        if (wm && otherMarked == 0) return true;
+        if (!wm && otherMarked > 0) return false;
+
+        // kolor: wybrana opcja ma inny kolor niz reszta
+        String wc = colorKey(lines.get(wi));
+        Set<String> others = new HashSet<>();
+        int diff = 0, same = 0;
+        for (int i : opts) {
+            if (i == wi) continue;
+            String ck = colorKey(lines.get(i));
+            others.add(ck);
+            if (ck.equals(wc)) same++; else diff++;
+        }
+        if (same == 0 && others.size() == 1) return true;      // jedyna w innym kolorze
+        if (diff == 1 && same >= 1) return false;               // ktos inny jest wyrozniony
+        return null;
+    }
+
+    // ---------- diagnostyka: wypisz sloty poza obszarem przedmiotow ----------
+    public void dump(MinecraftClient c, Config cfg) {
+        if (!(c.currentScreen instanceof GenericContainerScreen gcs)) return;
+        GenericContainerScreenHandler h = gcs.getScreenHandler();
+        var chat = c.inGameHud.getChatHud();
+        int size = Math.min(h.getRows() * 9, h.slots.size());
+        chat.addMessage(Text.literal("§e[AutoRynek] " + gcs.getTitle().getString() + " | wiersze: " + h.getRows()));
+        for (int i = 0; i < size; i++) {
+            if (inArea(i, cfg)) continue;
+            ItemStack st = h.getSlot(i).getStack();
+            if (st.isEmpty()) continue;
+            StringBuilder sb = new StringBuilder("§b" + i + "§f: " + st.getName().getString());
+            LoreComponent lore = st.get(DataComponentTypes.LORE);
+            if (lore != null) for (Text l : lore.lines()) {
+                String s = strip(l.getString());
+                if (!s.isBlank()) sb.append(" §7| §f").append(s).append(" §8(").append(colorKey(l)).append(")");
+            }
+            chat.addMessage(Text.literal(sb.toString()));
+        }
+        msg("§aSloty wypisane na czacie");
+    }
+
+    // ---------- dopasowanie ----------
     private boolean matches(ItemStack st, Config cfg) {
         long price = price(st);
         if (price < 0) return false;
@@ -122,7 +245,7 @@ public class Buyer {
         if (lore == null) return -1;
         long fallback = -1;
         for (Text line : lore.lines()) {
-            String s = line.getString();
+            String s = strip(line.getString());
             Matcher m = PRICE.matcher(s);
             if (!m.find()) continue;
             long v = parse(m.group(1), m.group(2));
