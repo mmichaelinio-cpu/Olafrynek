@@ -30,7 +30,39 @@ public class MenuScreen extends Screen {
         }
     }
 
-    private enum Mode { LIST, FORM, SETTINGS }
+    private enum Mode { LIST, FORM, PRESETS, SETTINGS }
+    // {nazwa z kolorem (& = kolor), id przedmiotu, enchanty}
+    private static final String[][] PRESETS = {
+        {"&bElytra", "elytra", ""},
+        {"&eTotem nieśmiertelności", "totem_of_undying", ""},
+        {"&6Zaczarowane jabłko", "enchanted_golden_apple", ""},
+        {"&dSkrzynia shulkera", "shulker_box", ""},
+        {"&aBeacon", "beacon", ""},
+        {"&cJajo smoka", "dragon_egg", ""},
+        {"&9Trójząb", "trident", ""},
+        {"&7Maczuga", "mace", ""},
+        {"&5Netherytowy miecz", "netherite_sword", ""},
+        {"&5Netherytowy hełm", "netherite_helmet", ""},
+        {"&5Netherytowy napierśnik", "netherite_chestplate", ""},
+        {"&5Netherytowe spodnie", "netherite_leggings", ""},
+        {"&5Netherytowe buty", "netherite_boots", ""},
+        {"&5Netherytowy kilof", "netherite_pickaxe", ""},
+        {"&5Netherytowa siekiera", "netherite_axe", ""},
+        {"&dKsiążka: Naprawa", "enchanted_book", "mending:1"},
+        {"&dKsiążka: Ostrość V", "enchanted_book", "sharpness:5"},
+        {"&dKsiążka: Ochrona IV", "enchanted_book", "protection:4"},
+        {"&dKsiążka: Wytrzymałość III", "enchanted_book", "unbreaking:3"},
+        {"&dKsiążka: Wydajność V", "enchanted_book", "efficiency:5"},
+        {"&dKsiążka: Szczęście III", "enchanted_book", "fortune:3"},
+        {"&dKsiążka: Grabież III", "enchanted_book", "looting:3"},
+        {"&dKsiążka: Zamiatanie III", "enchanted_book", "sweeping_edge:3"},
+        {"&dKsiążka: Cierń III", "enchanted_book", "thorns:3"},
+        {"&dKsiążka: Lekkie stąpanie", "enchanted_book", "silk_touch:1"},
+        {"&dKsiążka: Lekkie spadanie IV", "enchanted_book", "feather_falling:4"},
+    };
+    private int ppage = 0;
+    private String presetPrice = "", toast = "";
+    private TextFieldWidget fPreset;
     private final Screen parent;
     private Mode mode = Mode.LIST;
     private int page = 0;
@@ -56,6 +88,7 @@ public class MenuScreen extends Screen {
     private void label(String s, int x, int y, int color, boolean center) { labels.add(new Object[]{s, x, y, color, center}); }
 
     private void build() {
+        if (mode == Mode.PRESETS && fPreset != null) presetPrice = fPreset.getText();
         clearChildren(); labels.clear();
         Config cfg = AutoRynek.config;
         int pw = pw(), px = (width - pw) / 2, pr = px + pw, ix = px + 10, iw = pw - 20;
@@ -63,10 +96,10 @@ public class MenuScreen extends Screen {
         btn("X", pr - 34, 9, 26, 20, PANEL2, RED_H, this::close);
 
         // zakladki
-        int tw = (iw - 8) / 3, ty = 34;
-        String[] names = {"Reguly", "Nowa regula", "Ustawienia"};
-        Mode[] modes = {Mode.LIST, Mode.FORM, Mode.SETTINGS};
-        for (int i = 0; i < 3; i++) {
+        int tw = (iw - 12) / 4, ty = 34;
+        String[] names = {"Reguly", "Nowa", "Przydatne", "Ustawienia"};
+        Mode[] modes = {Mode.LIST, Mode.FORM, Mode.PRESETS, Mode.SETTINGS};
+        for (int i = 0; i < 4; i++) {
             final Mode m = modes[i];
             btn(names[i], ix + i * (tw + 4), ty, tw, 22, mode == m ? ACCENT : PANEL2, mode == m ? ACCENT_H : 0xFF2A3B66, () -> switchTo(m));
         }
@@ -84,9 +117,11 @@ public class MenuScreen extends Screen {
                     int idx = page * perPage + i;
                     if (idx >= cfg.rules.size()) break;
                     Config.Rule r = cfg.rules.get(idx);
-                    String txt = (r.id.isBlank() ? "*" : r.id.replace("minecraft:", ""))
-                        + (r.name.isBlank() ? "" : " \"" + r.name + "\"")
-                        + (r.enchants.isBlank() ? "" : " [" + r.enchants + "]") + "  <= " + r.maxPrice;
+                    boolean hasLabel = r.label != null && !r.label.isBlank();
+                    String head = hasLabel ? r.label.replace('&', '§') + "§r" : (r.id.isBlank() ? "*" : r.id.replace("minecraft:", ""));
+                    String txt = head
+                        + (r.name.isBlank() ? "" : " \"" + r.name.replace('&', '§') + "§r\"")
+                        + (hasLabel || r.enchants.isBlank() ? "" : " [" + r.enchants + "]") + "  <= " + r.maxPrice;
                     txt = textRenderer.trimToWidth(txt, iw - 40);
                     int y = ry0 + i * rowH;
                     btn(txt, ix, y, iw - 30, 22, PANEL2, PANEL2, () -> {});
@@ -98,7 +133,7 @@ public class MenuScreen extends Screen {
                 label("Strona " + (page + 1) + "/" + pages, width / 2, by + 7, MUTED, true);
             }
             case FORM -> {
-                String[] lb = {"ID przedmiotu (np. elytra)", "Fragment nazwy (opcjonalnie)", "Enchanty (np. sharpness:5,unbreaking:3)", "Maksymalna cena (np. 5000, 2k, 1.5m)"};
+                String[] lb = {"ID przedmiotu (np. elytra)", "Fragment nazwy (& = kolor, np. &cMiecz)", "Enchanty (np. sharpness:5,unbreaking:3)", "Maksymalna cena (np. 5000, 2k, 1.5m)"};
                 String[] dv = {dId, dName, dEnch, dPrice};
                 TextFieldWidget[] f = new TextFieldWidget[4];
                 for (int i = 0; i < 4; i++) {
@@ -118,6 +153,24 @@ public class MenuScreen extends Screen {
                     switchTo(Mode.LIST);
                 });
             }
+            case PRESETS -> {
+                label("Max cena dla dodawanych (np. 5000, 2k, 1.5m):", ix, ct, MUTED, false);
+                fPreset = field(ix, ct + 10, iw, presetPrice, "");
+                int y0 = ct + 36, rowH = 26;
+                int perPage = Math.max(1, Math.min(7, (height - 8 - 34 - y0) / rowH));
+                int pages = Math.max(1, (PRESETS.length + perPage - 1) / perPage);
+                ppage = Math.min(ppage, pages - 1);
+                for (int i = 0; i < perPage; i++) {
+                    int idx = ppage * perPage + i;
+                    if (idx >= PRESETS.length) break;
+                    final String[] p = PRESETS[idx];
+                    btn(p[0].replace('&', '§'), ix, y0 + i * rowH, iw, 22, PANEL2, 0xFF2A3B66, () -> addPreset(p));
+                }
+                int by = height - 8 - 26;
+                btn("<", ix, by, 44, 22, PANEL2, 0xFF2A3B66, () -> { if (ppage > 0) { ppage--; build(); } });
+                btn(">", ix + iw - 44, by, 44, 22, PANEL2, 0xFF2A3B66, () -> { if (ppage < pages - 1) { ppage++; build(); } });
+                label(toast.isEmpty() ? "Dotknij przedmiot, aby dodac regule   " + (ppage + 1) + "/" + pages : toast, width / 2, by + 7, MUTED, true);
+            }
             case SETTINGS -> {
                 int cw = (iw - 8) / 2;
                 String[] lb = {"Komenda rynku", "Tytul okna (fragment)", "Slot odswiez (-1=brak)", "Slot potwierdz (-1=brak)",
@@ -134,6 +187,17 @@ public class MenuScreen extends Screen {
                 btn("Zapisz", ix, ct + 5 * 31 + 2, iw, 28, ACCENT, ACCENT_H, () -> { applySettings(); switchTo(Mode.LIST); });
             }
         }
+    }
+
+    private void addPreset(String[] p) {
+        presetPrice = fPreset.getText();
+        long price = parsePrice(presetPrice);
+        if (price <= 0) { toast = "§cNajpierw wpisz cene!"; build(); return; }
+        Config.Rule r = new Config.Rule();
+        r.id = p[1]; r.enchants = p[2]; r.label = p[0]; r.maxPrice = price;
+        AutoRynek.config.rules.add(r); AutoRynek.config.save();
+        toast = "§aDodano: " + p[0].replace('&', '§') + " §r<= " + price;
+        build();
     }
 
     private void switchTo(Mode m) {
