@@ -5,6 +5,7 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.Screens;
 import net.minecraft.client.MinecraftClient;
@@ -33,6 +34,26 @@ public class AutoRynek implements ClientModInitializer {
             buyer.tick(c, config);
         });
 
+        // olafrynek HUD (lewy gorny rog, pod paskiem launchera)
+        HudRenderCallback.EVENT.register((ctx, tc) -> {
+            MinecraftClient c = MinecraftClient.getInstance();
+            if (c.player == null || c.options.hudHidden || buyer.startedAt == 0) return;
+            var tr = c.textRenderer;
+            long s = buyer.elapsedSecs();
+            String l1 = String.format("Czas: %02d:%02d:%02d   Kupiono: %d szt", s / 3600, (s / 60) % 60, s % 60, buyer.bought);
+            String l2 = "Wydano: " + buyer.spent + "$";
+            String l3 = buyer.status + (buyer.running ? "..." : "");
+            String title = "olafrynek HUD";
+            int w = Math.max(Math.max(tr.getWidth(l1), tr.getWidth(l2)), Math.max(tr.getWidth(l3), tr.getWidth(title))) + 12;
+            int x = 6, y = 30, h = 52;
+            ctx.fill(x, y, x + w, y + h, 0xC00B1220);
+            ctx.fill(x, y, x + w, y + 2, buyer.running ? 0xFF22C55E : 0xFF14B8A6);
+            ctx.drawTextWithShadow(tr, title, x + 6, y + 5, 0xFF2DD4BF);
+            ctx.drawTextWithShadow(tr, l1, x + 6, y + 17, 0xFFFFFFFF);
+            ctx.drawTextWithShadow(tr, l2, x + 6, y + 28, 0xFFFFFFFF);
+            ctx.drawTextWithShadow(tr, l3, x + 6, y + 39, 0xFF9FB0D0);
+        });
+
         // komendy czatu: /ar, /ar start, /ar stop
         ClientCommandRegistrationCallback.EVENT.register((d, r) -> d.register(
             ClientCommandManager.literal("ar")
@@ -48,9 +69,11 @@ public class AutoRynek implements ClientModInitializer {
             } else if (screen instanceof GenericContainerScreen) {
                 Screens.getButtons(screen).add(ButtonWidget.builder(Text.literal(buyer.running ? "§cSTOP" : "§aSTART"),
                     b -> { toggle(); b.setMessage(Text.literal(buyer.running ? "§cSTOP" : "§aSTART")); })
-                    .dimensions(w / 2 - 72, 4, 70, 20).build());
+                    .dimensions(w / 2 - 108, 4, 70, 20).build());
                 Screens.getButtons(screen).add(ButtonWidget.builder(Text.literal("SLOTY"),
-                    b -> buyer.dump(client, config)).dimensions(w / 2 + 2, 4, 70, 20).build());
+                    b -> buyer.dump(client, config)).dimensions(w / 2 - 34, 4, 70, 20).build());
+                Screens.getButtons(screen).add(ButtonWidget.builder(Text.literal("OFERTY"),
+                    b -> buyer.dumpItems(client, config)).dimensions(w / 2 + 40, 4, 70, 20).build());
             }
         });
     }
