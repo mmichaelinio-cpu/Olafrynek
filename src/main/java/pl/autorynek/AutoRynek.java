@@ -1,6 +1,5 @@
 package pl.autorynek;
 
-import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
@@ -34,22 +33,24 @@ public class AutoRynek implements ClientModInitializer {
             buyer.tick(c, config);
         });
 
-        // Telefon: komendy czatu /ar, /ar start, /ar stop
+        // komendy czatu: /ar, /ar start, /ar stop
         ClientCommandRegistrationCallback.EVENT.register((d, r) -> d.register(
             ClientCommandManager.literal("ar")
                 .executes(ctx -> { MinecraftClient c = MinecraftClient.getInstance(); c.send(() -> c.setScreen(new MenuScreen(null))); return 1; })
                 .then(ClientCommandManager.literal("start").executes(ctx -> { buyer.start(); return 1; }))
                 .then(ClientCommandManager.literal("stop").executes(ctx -> { buyer.stop(); return 1; }))));
 
-        // Telefon: przyciski ekranowe (menu pauzy + okno rynku)
+        // Telefon: przyciski ekranowe (srodek, zeby nie wchodzic na przyciski launchera)
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
             if (screen instanceof GameMenuScreen) {
                 Screens.getButtons(screen).add(ButtonWidget.builder(Text.literal("AutoRynek"),
-                    b -> client.setScreen(new MenuScreen(screen))).dimensions(6, 6, 90, 24).build());
+                    b -> client.setScreen(new MenuScreen(screen))).dimensions(w / 2 - 50, h - 30, 100, 22).build());
             } else if (screen instanceof GenericContainerScreen) {
                 Screens.getButtons(screen).add(ButtonWidget.builder(Text.literal(buyer.running ? "§cSTOP" : "§aSTART"),
                     b -> { toggle(); b.setMessage(Text.literal(buyer.running ? "§cSTOP" : "§aSTART")); })
-                    .dimensions(6, 6, 70, 24).build());
+                    .dimensions(w / 2 - 72, 4, 70, 20).build());
+                Screens.getButtons(screen).add(ButtonWidget.builder(Text.literal("SLOTY"),
+                    b -> buyer.dump(client, config)).dimensions(w / 2 + 2, 4, 70, 20).build());
             }
         });
     }
