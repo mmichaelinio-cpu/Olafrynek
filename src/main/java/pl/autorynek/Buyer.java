@@ -21,16 +21,26 @@ public class Buyer {
 
     public boolean running = false;
     public int bought = 0;
+    public long spent = 0, startedAt = 0, stoppedAt = 0;
+    public String status = "Oczekiwanie...";
+    private long pendingPrice = 0, curPrice = 0;
     private long nextAt = 0, lastOpen = 0, confirmDeadline = 0, seenAt = 0, openedAt = 0;
     private boolean awaitingConfirm = false, sortGaveUp = false;
     private int marketSyncId = -1, seenSync = -1, sortCheckedSync = -1, sortClicks = 0;
 
     public void start() {
         running = true; awaitingConfirm = false; nextAt = 0;
+        bought = 0; spent = 0; startedAt = System.currentTimeMillis(); stoppedAt = 0; status = "Oczekiwanie...";
         seenSync = -1; sortCheckedSync = -1; sortClicks = 0; sortGaveUp = false;
         msg("§aAutoRynek: START");
     }
-    public void stop() { if (running) msg("§cAutoRynek: STOP (kupiono: " + bought + ")"); running = false; }
+    public void stop() { if (running) msg("§cAutoRynek: STOP (kupiono: " + bought + ")"); halt(); }
+    private void halt() { if (running) stoppedAt = System.currentTimeMillis(); running = false; status = "Zatrzymany"; }
+    public long elapsedSecs() {
+        if (startedAt == 0) return 0;
+        long end = running ? System.currentTimeMillis() : (stoppedAt > 0 ? stoppedAt : startedAt);
+        return Math.max(0, (end - startedAt) / 1000);
+    }
 
     private void msg(String s) {
         MinecraftClient c = MinecraftClient.getInstance();
@@ -41,9 +51,9 @@ public class Buyer {
 
     public void tick(MinecraftClient c, Config cfg) {
         if (!running) return;
-        if (c.player == null || c.world == null || c.interactionManager == null) { running = false; return; }
+        if (c.player == null || c.world == null || c.interactionManager == null) { halt(); return; }
         if (cfg.rules.isEmpty()) {
-            running = false;
+            halt();
             msg("§cBrak regul. Dodaj regule w AutoRynek -> Przydatne.");
             return;
         }
@@ -57,7 +67,7 @@ public class Buyer {
                 if (cfg.confirmSlot >= 0 && cfg.confirmSlot < h.slots.size()
                         && !h.getSlot(cfg.confirmSlot).getStack().isEmpty()) {
                     c.interactionManager.clickSlot(h.syncId, cfg.confirmSlot, 0, SlotActionType.PICKUP, c.player);
-                    bought++; awaitingConfirm = false;
+                    bought++; spent += pendingPrice; awaitingConfirm = false; status = "Potwierdzam zakup";
                     nextAt = now + cfg.actionDelayMs;
                 } else if (now > confirmDeadline) { awaitingConfirm = false; }
                 return;
@@ -71,7 +81,7 @@ public class Buyer {
 
             // nowe okno: poczekaj az serwer wysle zawartosc
             if (h.syncId != seenSync) {
-                seenSync = h.syncId; seenAt = now; openedAt = now;
+                seenSync = h.syncId; seenAt = now; openedAt = now; status = "Skanuje oferty";
                 nextAt = now + Math.max(100, cfg.settleMs);
                 return;
             }
@@ -92,7 +102,7 @@ public class Buyer {
                     msg("§cNie udalo sie ustawic sortowania: " + cfg.wantedSort);
                 } else {
                     c.interactionManager.clickSlot(h.syncId, cfg.sortSlot, 1, SlotActionType.PICKUP, c.player);
-                    sortClicks++; seenAt = now;
+                    sortClicks++; seenAt = now; status = "Ustawiam sortowanie";
                     nextAt = now + cfg.actionDelayMs + 250;
                     return;
                 }
@@ -105,8 +115,9 @@ public class Buyer {
                 if (st.isEmpty()) continue;
                 if (matches(st, cfg)) {
                     c.interactionManager.clickSlot(h.syncId, i, 0, SlotActionType.PICKUP, c.player);
+                    pendingPrice = curPrice; status = "Kupuje...";
                     if (cfg.confirmSlot >= 0) { awaitingConfirm = true; confirmDeadline = now + 2000; }
-                    else bought++;
+                    else { bought++; spent += pendingPrice; }
                     nextAt = now + cfg.actionDelayMs;
                     return;
                 }
@@ -119,13 +130,13 @@ public class Buyer {
                 nextAt = now + 100;   // okno zostaje otwarte, skanujemy dalej
             } else {
                 c.player.closeHandledScreen();
-                lastOpen = 0;
+                lastOpen = 0; status = "Odswiezam rynek";
                 nextAt = now + 300;
             }
         } else if (c.currentScreen == null) {
             if (now - lastOpen > 1500) {
                 c.player.networkHandler.sendChatCommand(cfg.command);
-                lastOpen = now;
+                lastOpen = now; status = "Otwieram rynek";
                 nextAt = now + 500;
             }
         }
@@ -254,7 +265,7 @@ public class Buyer {
                 e = e.trim();
                 if (!e.isEmpty() && !ench.contains(e)) { ok = false; break; }
             }
-            if (ok) return true;
+            if (ok) { curPrice = price; return true; }
         }
         return false;
     }
